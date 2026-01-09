@@ -4,23 +4,53 @@ from tkinter import *
 from tkinter import filedialog, ttk, messagebox
 
 df = None
+file_type = None
 
-# ---------------- FUNCTIONS ---------------- #
-def load_excel():
-    global df
-    file_path = filedialog.askopenfilename(
-        filetypes=[("Excel Files", "*.xlsx *.xls")]
+# ---------------- FILE LOAD ---------------- #
+def load_file():
+    global df, file_type
+    path = filedialog.askopenfilename(
+        filetypes=[
+            ("Excel Files", "*.xlsx *.xls"),
+            ("CSV Files", "*.csv")
+        ]
     )
-    if file_path:
-        df = pd.read_excel(file_path)
-        update_table()
-        update_kpi()
+    if not path:
+        return
 
-def update_kpi():
-    rows_var.set(str(df.shape[0]))
-    cols_var.set(str(df.shape[1]))
-    num_var.set(str(df.select_dtypes(include='number').shape[1]))
+    if path.endswith(".csv"):
+        df = pd.read_csv(path)
+        file_type = "csv"
+    else:
+        df = pd.read_excel(path)
+        file_type = "excel"
 
+    update_table()
+    update_kpi()
+
+# ---------------- SAVE DATA ---------------- #
+def save_file():
+    if df is None:
+        return
+
+    path = filedialog.asksaveasfilename(
+        defaultextension=".xlsx",
+        filetypes=[
+            ("Excel File", "*.xlsx"),
+            ("CSV File", "*.csv")
+        ]
+    )
+    if not path:
+        return
+
+    if path.endswith(".csv"):
+        df.to_csv(path, index=False)
+    else:
+        df.to_excel(path, index=False)
+
+    messagebox.showinfo("Saved", "File saved successfully")
+
+# ---------------- TABLE ---------------- #
 def update_table():
     tree.delete(*tree.get_children())
     tree["columns"] = list(df.columns)
@@ -28,136 +58,138 @@ def update_table():
 
     for col in df.columns:
         tree.heading(col, text=col)
-        tree.column(col, width=140, anchor=CENTER)
+        tree.column(col, width=130, anchor=CENTER)
 
-    for _, row in df.iterrows():
-        tree.insert("", END, values=list(row))
+    for i, row in df.iterrows():
+        tree.insert("", END, iid=i, values=list(row))
 
+def on_double_click(event):
+    item = tree.selection()[0]
+    column = tree.identify_column(event.x)
+    col_index = int(column.replace("#", "")) - 1
+
+    x, y, w, h = tree.bbox(item, column)
+    value = tree.item(item, "values")[col_index]
+
+    entry = Entry(tree)
+    entry.place(x=x, y=y, width=w, height=h)
+    entry.insert(0, value)
+    entry.focus()
+
+    def save_edit(event):
+        df.iat[int(item), col_index] = entry.get()
+        update_table()
+        entry.destroy()
+
+    entry.bind("<Return>", save_edit)
+
+# ---------------- KPI ---------------- #
+def update_kpi():
+    rows_var.set(str(df.shape[0]))
+    cols_var.set(str(df.shape[1]))
+    num_var.set(str(df.select_dtypes(include='number').shape[1]))
+
+# ---------------- CHART ---------------- #
 def show_chart():
     if df is None:
-        messagebox.showerror("Error", "Please upload an Excel file first")
         return
 
     chart = chart_type.get()
     num_df = df.select_dtypes(include='number')
 
     if num_df.empty:
-        messagebox.showerror("Error", "No numeric columns found")
+        messagebox.showerror("Error", "No numeric data")
         return
 
-    plt.close('all')  # 🔥 FIX: close old figures
+    plt.close("all")
 
-    if chart == "Bar Chart":
-        num_df.plot(kind='bar', figsize=(8,5))
-    elif chart == "Line Chart":
-        num_df.plot(kind='line', figsize=(8,5))
-    elif chart == "Pie Chart":
-        num_df.iloc[0].plot(kind='pie', autopct='%1.1f%%', figsize=(6,6))
+    if chart == "Bar":
+        num_df.plot(kind="bar", figsize=(8,5))
+    elif chart == "Line":
+        num_df.plot(kind="line", figsize=(8,5))
+    elif chart == "Pie":
+        num_df.iloc[0].plot(kind="pie", autopct="%1.1f%%", figsize=(6,6))
     elif chart == "Histogram":
-        num_df.plot(kind='hist', figsize=(8,5))
-    elif chart == "Scatter Plot":
+        num_df.plot(kind="hist", figsize=(8,5))
+    elif chart == "Scatter":
         if num_df.shape[1] >= 2:
             plt.figure(figsize=(8,5))
             plt.scatter(num_df.iloc[:,0], num_df.iloc[:,1])
-            plt.xlabel(num_df.columns[0])
-            plt.ylabel(num_df.columns[1])
         else:
-            messagebox.showwarning("Warning", "Scatter plot needs 2 numeric columns")
             return
-    elif chart == "Area Chart":
-        num_df.plot(kind='area', figsize=(8,5))
-    elif chart == "Box Plot":
-        num_df.plot(kind='box', figsize=(8,5))
+    elif chart == "Area":
+        num_df.plot(kind="area", figsize=(8,5))
+    elif chart == "Box":
+        num_df.plot(kind="box", figsize=(8,5))
 
     plt.title(chart)
     plt.tight_layout()
     plt.show()
 
-# ---------------- UI SETUP ---------------- #
+def save_chart():
+    plt.savefig("dashboard_chart.png")
+    messagebox.showinfo("Saved", "Dashboard saved as image")
+
+# ---------------- UI ---------------- #
 root = Tk()
 root.title("ExcelInsight AI Dashboard")
 root.geometry("1300x720")
 root.configure(bg="#f1f5f9")
 
-# Header
-header = Frame(root, bg="#0f172a", height=70)
+header = Frame(root, bg="#0f172a", height=60)
 header.pack(fill=X)
-Label(
-    header, text="ExcelInsight AI",
-    fg="white", bg="#0f172a",
-    font=("Segoe UI", 22, "bold")
-).pack(anchor=W, padx=30, pady=5)
-Label(
-    header, text="Advanced Excel Data Visualization Dashboard",
-    fg="#cbd5f5", bg="#0f172a",
-    font=("Segoe UI", 11)
-).pack(anchor=W, padx=30)
+Label(header, text="ExcelInsight AI",
+      fg="white", bg="#0f172a",
+      font=("Segoe UI", 20, "bold")).pack(padx=20, anchor=W)
 
-# KPI Section
-kpi_frame = Frame(root, bg="#f1f5f9")
-kpi_frame.pack(fill=X, padx=30, pady=15)
-
-def kpi_card(parent, title, var):
-    card = Frame(parent, bg="white", width=200, height=90)
-    card.pack(side=LEFT, padx=15)
-    Label(card, text=title, bg="white", fg="#64748b").pack(anchor=W, padx=15, pady=5)
-    Label(card, textvariable=var, bg="white", fg="#1e40af",
-          font=("Segoe UI", 22, "bold")).pack(anchor=W, padx=15)
+kpi = Frame(root, bg="#f1f5f9")
+kpi.pack(fill=X, padx=20, pady=10)
 
 rows_var = StringVar(value="0")
 cols_var = StringVar(value="0")
-num_var  = StringVar(value="0")
+num_var = StringVar(value="0")
 
-kpi_card(kpi_frame, "Total Rows", rows_var)
-kpi_card(kpi_frame, "Total Columns", cols_var)
-kpi_card(kpi_frame, "Numeric Columns", num_var)
+for t, v in [("Rows", rows_var), ("Columns", cols_var), ("Numeric", num_var)]:
+    f = Frame(kpi, bg="white", width=200, height=80)
+    f.pack(side=LEFT, padx=10)
+    Label(f, text=t, bg="white").pack(anchor=W, padx=10)
+    Label(f, textvariable=v, bg="white",
+          font=("Segoe UI", 18, "bold")).pack(anchor=W, padx=10)
 
-# Main Content
-content = Frame(root, bg="#f1f5f9")
-content.pack(fill=BOTH, expand=True, padx=20)
+main = Frame(root, bg="#f1f5f9")
+main.pack(fill=BOTH, expand=True)
 
-# Sidebar
-sidebar = Frame(content, bg="#1e293b", width=220)
+sidebar = Frame(main, bg="#1e293b", width=200)
 sidebar.pack(side=LEFT, fill=Y)
 
-Button(
-    sidebar, text="📂 Upload Excel",
-    font=("Segoe UI", 12),
-    bg="#1e40af", fg="white",
-    bd=0, command=load_excel
-).pack(pady=30, padx=20, fill=X)
+Button(sidebar, text="📂 Load Excel / CSV", command=load_file,
+       bg="#2563eb", fg="white", bd=0).pack(padx=15, pady=20, fill=X)
 
-# Table Area
-table_frame = Frame(content, bg="white")
-table_frame.pack(side=LEFT, fill=BOTH, expand=True, padx=20)
+Button(sidebar, text="💾 Save Data", command=save_file,
+       bg="#10b981", fg="white", bd=0).pack(padx=15, pady=10, fill=X)
 
-tree = ttk.Treeview(table_frame)
-tree.pack(side=LEFT, fill=BOTH, expand=True)
+content = Frame(main, bg="white")
+content.pack(side=LEFT, fill=BOTH, expand=True, padx=10)
 
-scroll = ttk.Scrollbar(table_frame, orient=VERTICAL, command=tree.yview)
-scroll.pack(side=RIGHT, fill=Y)
-tree.configure(yscrollcommand=scroll.set)
+tree = ttk.Treeview(content)
+tree.pack(fill=BOTH, expand=True)
+tree.bind("<Double-1>", on_double_click)
 
-# Chart Controls
 control = Frame(root, bg="#f1f5f9")
-control.pack(fill=X, padx=40, pady=10)
+control.pack(fill=X, padx=20, pady=10)
 
-chart_type = StringVar(value="Bar Chart")
+chart_type = StringVar(value="Bar")
 ttk.Combobox(
     control, textvariable=chart_type,
-    values=[
-        "Bar Chart", "Line Chart", "Pie Chart",
-        "Histogram", "Scatter Plot",
-        "Area Chart", "Box Plot"
-    ],
-    state="readonly", width=22
+    values=["Bar", "Line", "Pie", "Histogram", "Scatter", "Area", "Box"],
+    state="readonly", width=15
 ).pack(side=LEFT, padx=10)
 
-Button(
-    control, text="📊 Generate Chart",
-    bg="#10b981", fg="white",
-    font=("Segoe UI", 11),
-    bd=0, command=show_chart
-).pack(side=LEFT)
+Button(control, text="📊 Show Dashboard", command=show_chart,
+       bg="#16a34a", fg="white", bd=0).pack(side=LEFT)
+
+Button(control, text="💾 Save Dashboard", command=save_chart,
+       bg="#0ea5e9", fg="white", bd=0).pack(side=LEFT, padx=10)
 
 root.mainloop()
+
